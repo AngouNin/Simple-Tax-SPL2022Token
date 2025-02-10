@@ -1,16 +1,15 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Burn, Mint, Token, TokenAccount, Transfer};
+use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 
-declare_id!("dTsxz3p2zw6NrrkEQrxof4CK1hMqRQV94iiXQrDQWXC");
+declare_id!("92euoM8vtuUV8MJpy5qKN51XzosCgETo9KcZ1zKbMEK2");
 
 #[program]
 pub mod solana_taxed_token {
     use super::*;
 
-    pub fn initialize(ctx: Context<Initialize>, marketing_wallet: Pubkey, burn_wallet: Pubkey) -> Result<()> {
+    pub fn initialize(ctx: Context<Initialize>, marketing_wallet: Pubkey) -> Result<()> {
         let config = &mut ctx.accounts.config;
         config.marketing_wallet = marketing_wallet;
-        config.burn_wallet = burn_wallet;
         config.tax_basis_points = 150; // 1.5% tax (150 / 10000)
         Ok(())
     }
@@ -18,7 +17,6 @@ pub mod solana_taxed_token {
     pub fn transfer_hook(ctx: Context<TransferHook>, amount: u64) -> Result<()> {
         let config = &ctx.accounts.config;
         let tax_amount = (amount * config.tax_basis_points as u64) / 10_000; // 1.5% tax
-        let half_tax = tax_amount / 2; // 0.75% each
 
         let remaining = amount - tax_amount;
 
@@ -32,20 +30,7 @@ pub mod solana_taxed_token {
                     authority: ctx.accounts.source_authority.to_account_info(),
                 },
             ),
-            half_tax,
-        )?;
-
-        // Burn tokens
-        token::burn(
-            CpiContext::new(
-                ctx.accounts.token_program.to_account_info(),
-                Burn {
-                    mint: ctx.accounts.mint.to_account_info(),
-                    from: ctx.accounts.source.to_account_info(),
-                    authority: ctx.accounts.source_authority.to_account_info(),
-                },
-            ),
-            half_tax,
+            tax_amount,
         )?;
 
         // Transfer remaining tokens to recipient
@@ -83,8 +68,6 @@ pub struct TransferHook<'info> {
     #[account(mut)]
     pub marketing_wallet: Account<'info, TokenAccount>,
     #[account(mut)]
-    pub burn_wallet: Account<'info, TokenAccount>,
-    #[account(mut)]
     pub mint: Account<'info, Mint>,
     #[account(signer)]
     pub source_authority: Signer<'info>,
@@ -96,6 +79,5 @@ pub struct TransferHook<'info> {
 #[account]
 pub struct Config {
     pub marketing_wallet: Pubkey,
-    pub burn_wallet: Pubkey,
     pub tax_basis_points: u16,
 }
